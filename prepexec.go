@@ -56,34 +56,12 @@ type PrepareAndExecRows struct {
 
 // Next advances to the next row. Returns false when done.
 func (r *PrepareAndExecRows) Next() bool {
-	if r.inner.closed || r.inner.done && r.inner.bufferIdx >= len(r.inner.buffer) {
-		return false
-	}
-	if r.inner.bufferIdx >= len(r.inner.buffer) {
-		if err := r.inner.fetchMore(); err != nil || len(r.inner.buffer) == 0 {
-			r.inner.done = true
-			return false
-		}
-	}
-	return r.inner.bufferIdx < len(r.inner.buffer)
+	return r.inner.hasNext()
 }
 
 // Scan copies the current row values into dest.
 func (r *PrepareAndExecRows) Scan(dest ...interface{}) error {
-	if r.inner.bufferIdx >= len(r.inner.buffer) {
-		return fmt.Errorf("cubrid: no current row")
-	}
-	row := r.inner.buffer[r.inner.bufferIdx]
-	r.inner.bufferIdx++
-	for i, v := range row {
-		if i < len(dest) {
-			ptr, ok := dest[i].(*interface{})
-			if ok {
-				*ptr = v
-			}
-		}
-	}
-	return nil
+	return r.inner.scanRow(dest...)
 }
 
 // Columns returns the column names.
@@ -353,7 +331,7 @@ func (c *cubridConn) sendPrepareAndExec(ctx context.Context, query string, args 
 
 	// Bind parameters.
 	for i, arg := range args {
-		data, cubType, err := EncodeBindValue(arg)
+		data, cubType, err := encodeBindValue(arg)
 		if err != nil {
 			return nil, fmt.Errorf("cubrid: encode param %d: %w", i+1, err)
 		}

@@ -38,7 +38,7 @@ func buildDateTimeTzData(year, month, day, hour, min, sec, msec int, tz string) 
 
 func TestDecodeValueTimestampTz(t *testing.T) {
 	data := buildTimestampTzData(2026, 3, 30, 10, 15, 30, "Asia/Seoul")
-	val, err := DecodeValue(protocol.CubridTypeTsTz, data)
+	val, err := decodeValue(protocol.CubridTypeTsTz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestDecodeValueTimestampTz(t *testing.T) {
 
 func TestDecodeValueTimestampLtz(t *testing.T) {
 	data := buildTimestampTzData(2026, 7, 4, 18, 30, 0, "UTC")
-	val, err := DecodeValue(protocol.CubridTypeTsLtz, data)
+	val, err := decodeValue(protocol.CubridTypeTsLtz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestDecodeValueTimestampLtz(t *testing.T) {
 
 func TestDecodeValueDateTimeTz(t *testing.T) {
 	data := buildDateTimeTzData(2026, 12, 25, 23, 59, 59, 500, "America/New_York")
-	val, err := DecodeValue(protocol.CubridTypeDtTz, data)
+	val, err := decodeValue(protocol.CubridTypeDtTz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestDecodeValueDateTimeTz(t *testing.T) {
 
 func TestDecodeValueDateTimeLtz(t *testing.T) {
 	data := buildDateTimeTzData(2026, 6, 15, 12, 0, 0, 0, "Europe/London")
-	val, err := DecodeValue(protocol.CubridTypeDtLtz, data)
+	val, err := decodeValue(protocol.CubridTypeDtLtz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestScanTypeForTzTypes(t *testing.T) {
 		{protocol.CubridTypeDtLtz, reflect.TypeOf(&CubridDateTimeLtz{})},
 	}
 	for _, tt := range tests {
-		got := ScanTypeForCubridType(tt.ct)
+		got := scanTypeForCubridType(tt.ct)
 		if got != tt.want {
 			t.Errorf("ScanType(%v): got %v, want %v", tt.ct, got, tt.want)
 		}
@@ -158,7 +158,7 @@ func TestScanTypeForTzTypes(t *testing.T) {
 func TestTimezonePreserved(t *testing.T) {
 	// Verify the original timezone string is preserved, not converted to Go Location name.
 	data := buildTimestampTzData(2026, 1, 1, 0, 0, 0, "+09:00")
-	val, _ := DecodeValue(protocol.CubridTypeTsTz, data)
+	val, _ := decodeValue(protocol.CubridTypeTsTz, data)
 	ts := val.(*CubridTimestampTz)
 	if ts.Timezone != "+09:00" {
 		t.Fatalf("timezone string not preserved: got %q, want %q", ts.Timezone, "+09:00")

@@ -12,10 +12,10 @@ import (
 	"github.com/search5/cubrid-go/protocol"
 )
 
-// EncodeBindValue encodes a Go value into the CCI wire format for parameter binding.
+// encodeBindValue encodes a Go value into the CCI wire format for parameter binding.
 // Returns the encoded bytes (excluding the length prefix), the CUBRID type, and any error.
 // NULL values return empty data with CubridTypeNull.
-func EncodeBindValue(v interface{}) ([]byte, protocol.CubridType, error) {
+func encodeBindValue(v interface{}) ([]byte, protocol.CubridType, error) {
 	if v == nil {
 		return nil, protocol.CubridTypeNull, nil
 	}
@@ -106,23 +106,25 @@ func EncodeBindValue(v interface{}) ([]byte, protocol.CubridType, error) {
 		return b, protocol.CubridTypeString, nil
 
 	case *CubridMonetary:
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, math.Float64bits(val.Amount))
-		return b, protocol.CubridTypeDouble, nil
+		b := make([]byte, 12)
+		binary.BigEndian.PutUint32(b[0:4], uint32(val.Currency))
+		binary.BigEndian.PutUint64(b[4:12], math.Float64bits(val.Amount))
+		return b, protocol.CubridTypeMonetary, nil
 
 	case CubridMonetary:
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, math.Float64bits(val.Amount))
-		return b, protocol.CubridTypeDouble, nil
+		b := make([]byte, 12)
+		binary.BigEndian.PutUint32(b[0:4], uint32(val.Currency))
+		binary.BigEndian.PutUint64(b[4:12], math.Float64bits(val.Amount))
+		return b, protocol.CubridTypeMonetary, nil
 
 	default:
 		return nil, 0, fmt.Errorf("cubrid: unsupported bind type %T", v)
 	}
 }
 
-// DecodeValue decodes a wire-format value into a Go type.
+// decodeValue decodes a wire-format value into a Go type.
 // NULL values (CubridTypeNull or nil data) return nil.
-func DecodeValue(cubType protocol.CubridType, data []byte) (interface{}, error) {
+func decodeValue(cubType protocol.CubridType, data []byte) (interface{}, error) {
 	if cubType == protocol.CubridTypeNull || data == nil {
 		return nil, nil
 	}
@@ -275,7 +277,7 @@ func DecodeValue(cubType protocol.CubridType, data []byte) (interface{}, error) 
 		// LOB columns return a handle (locator), not the actual data.
 		// If the data is large enough to be a LOB handle (>= 17 bytes), decode it.
 		if len(data) >= 17 {
-			handle, err := DecodeLobHandle(data)
+			handle, err := decodeLobHandle(data)
 			if err == nil {
 				return handle, nil
 			}
@@ -292,7 +294,7 @@ func DecodeValue(cubType protocol.CubridType, data []byte) (interface{}, error) 
 		return &CubridJson{value: strings.TrimRight(string(data), "\x00")}, nil
 
 	case protocol.CubridTypeObject:
-		return DecodeCubridOid(data)
+		return decodeCubridOid(data)
 
 	default:
 		// Return raw bytes for unrecognized types.
@@ -302,8 +304,8 @@ func DecodeValue(cubType protocol.CubridType, data []byte) (interface{}, error) 
 	}
 }
 
-// ScanTypeForCubridType returns the Go reflect.Type appropriate for scanning a CUBRID column.
-func ScanTypeForCubridType(ct protocol.CubridType) reflect.Type {
+// scanTypeForCubridType returns the Go reflect.Type appropriate for scanning a CUBRID column.
+func scanTypeForCubridType(ct protocol.CubridType) reflect.Type {
 	switch ct {
 	case protocol.CubridTypeShort:
 		return reflect.TypeOf(int16(0))

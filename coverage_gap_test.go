@@ -30,7 +30,7 @@ func TestDecodeCollectionValueFull(t *testing.T) {
 	protocol.WriteInt(&buf, 4)  // elem 2 size
 	binary.Write(&buf, binary.BigEndian, int32(20))
 
-	val, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, buf.Bytes())
+	val, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestDecodeCollectionValueFull(t *testing.T) {
 	}
 
 	// MULTISET
-	val2, err := DecodeCollectionValue(protocol.CubridTypeMultiSet, protocol.CubridTypeInt, buf.Bytes())
+	val2, err := decodeCollectionValue(protocol.CubridTypeMultiSet, protocol.CubridTypeInt, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestDecodeCollectionValueFull(t *testing.T) {
 	}
 
 	// SEQUENCE
-	val3, err := DecodeCollectionValue(protocol.CubridTypeSequence, protocol.CubridTypeInt, buf.Bytes())
+	val3, err := decodeCollectionValue(protocol.CubridTypeSequence, protocol.CubridTypeInt, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestDecodeCollectionValueWithNull(t *testing.T) {
 	protocol.WriteInt(&buf, 1)  // element count
 	protocol.WriteInt(&buf, 0)  // elem size = 0 (NULL)
 
-	val, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, buf.Bytes())
+	val, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,8 +325,10 @@ func TestParseExecResultInsertOID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.lastInsertID != 42 {
-		t.Errorf("lastInsertID = %d, want 42", r.lastInsertID)
+	// CCI does not provide last insert ID in EXECUTE response.
+	// OID pageID is not a valid last insert ID — use FC 40 instead.
+	if r.lastInsertID != 0 {
+		t.Errorf("lastInsertID = %d, want 0 (OID pageID should not be used)", r.lastInsertID)
 	}
 }
 

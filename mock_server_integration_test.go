@@ -409,53 +409,51 @@ func TestMockServerLobOps(t *testing.T) {
 	}
 	defer conn.Close()
 
+	h, err := LobNew(context.Background(), conn, LobBlob)
+	if err != nil {
+		t.Fatalf("LobNew: %v", err)
+	}
+	if h.Locator != "loc1" {
+		t.Fatalf("locator = %q", h.Locator)
+	}
+
+	n, err := LobWrite(context.Background(), conn, h, 0, []byte("hello"))
+	if err != nil {
+		t.Fatalf("LobWrite: %v", err)
+	}
+	if n != 5 {
+		t.Fatalf("LobWrite n = %d", n)
+	}
+
+	data, err := LobRead(context.Background(), conn, h, 0, 5)
+	if err != nil {
+		t.Fatalf("LobRead: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("LobRead data = %q", data)
+	}
+
+	// Test LobReader.
+	h.Size = 5
+	reader := NewLobReader(context.Background(), conn, h)
+	buf := make([]byte, 10)
+	rn, err := reader.Read(buf)
+	if rn != 5 {
+		t.Fatalf("LobReader.Read n = %d", rn)
+	}
+
+	// Test LobWriter.
+	h2 := &CubridLobHandle{LobType: LobBlob, Size: 0, Locator: "loc2"}
+	writer := NewLobWriter(context.Background(), conn, h2)
+	wn, err := writer.Write([]byte("world"))
+	if err != nil {
+		t.Fatalf("LobWriter.Write: %v", err)
+	}
+	if wn != 5 {
+		t.Fatalf("LobWriter.Write n = %d", wn)
+	}
+
 	err = conn.Raw(func(driverConn interface{}) error {
-		c := driverConn.(*cubridConn)
-
-		h, err := LobNew(context.Background(), c, LobBlob)
-		if err != nil {
-			return fmt.Errorf("LobNew: %w", err)
-		}
-		if h.Locator != "loc1" {
-			return fmt.Errorf("locator = %q", h.Locator)
-		}
-
-		n, err := LobWrite(context.Background(), c, h, 0, []byte("hello"))
-		if err != nil {
-			return fmt.Errorf("LobWrite: %w", err)
-		}
-		if n != 5 {
-			return fmt.Errorf("LobWrite n = %d", n)
-		}
-
-		data, err := LobRead(context.Background(), c, h, 0, 5)
-		if err != nil {
-			return fmt.Errorf("LobRead: %w", err)
-		}
-		if string(data) != "hello" {
-			return fmt.Errorf("LobRead data = %q", data)
-		}
-
-		// Test LobReader.
-		h.Size = 5
-		reader := NewLobReader(context.Background(), c, h)
-		buf := make([]byte, 10)
-		rn, err := reader.Read(buf)
-		if rn != 5 {
-			return fmt.Errorf("LobReader.Read n = %d", rn)
-		}
-
-		// Test LobWriter.
-		h2 := &CubridLobHandle{LobType: LobBlob, Size: 0, Locator: "loc2"}
-		writer := NewLobWriter(context.Background(), c, h2)
-		wn, err := writer.Write([]byte("world"))
-		if err != nil {
-			return fmt.Errorf("LobWriter.Write: %w", err)
-		}
-		if wn != 5 {
-			return fmt.Errorf("LobWriter.Write n = %d", wn)
-		}
-
 		return nil
 	})
 	if err != nil {
@@ -490,30 +488,26 @@ func TestMockServerOidOps(t *testing.T) {
 	}
 	defer conn.Close()
 
-	err = conn.Raw(func(driverConn interface{}) error {
-		c := driverConn.(*cubridConn)
-		oid := NewCubridOid(100, 5, 2)
+	oid := NewCubridOid(100, 5, 2)
 
-		result, err := OidGet(context.Background(), c, oid, []string{"id"})
-		if err != nil {
-			return fmt.Errorf("OidGet: %w", err)
-		}
-		if result["id"] != int32(42) {
-			return fmt.Errorf("id = %v", result["id"])
-		}
+	result, err := OidGet(context.Background(), conn, oid, []string{"id"})
+	if err != nil {
+		t.Fatalf("OidGet: %v", err)
+	}
+	if result["id"] != int32(42) {
+		t.Fatalf("id = %v", result["id"])
+	}
 
-		err = OidPut(context.Background(), c, oid, map[string]interface{}{"name": "test"})
-		if err != nil {
-			return fmt.Errorf("OidPut: %w", err)
-		}
-		return nil
-	})
+	err = OidPut(context.Background(), conn, oid, map[string]interface{}{"name": "test"})
+	if err != nil {
+		t.Fatalf("OidPut: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestMockServerSchemaInfo(t *testing.T) {
+func TestMockServerschemaInfo(t *testing.T) {
 	srv := newMockCASServer(t)
 	defer srv.close()
 
@@ -557,7 +551,7 @@ func TestMockServerSchemaInfo(t *testing.T) {
 
 	err = conn.Raw(func(driverConn interface{}) error {
 		c := driverConn.(*cubridConn)
-		sr, err := SchemaInfo(context.Background(), c, SchemaClass, "", "", SchemaFlagExact)
+		sr, err := schemaInfo(context.Background(), c, SchemaClass, "", "", SchemaFlagExact)
 		if err != nil {
 			return fmt.Errorf("SchemaInfo: %w", err)
 		}

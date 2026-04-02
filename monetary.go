@@ -52,14 +52,11 @@ func (c Currency) String() string {
 
 // CubridMonetary represents a CUBRID MONETARY value with an amount and currency.
 //
-// Wire format: 8-byte f64 big-endian (amount only). The currency code is not
-// transmitted on the wire — it is determined by the server's default currency.
-// When decoded from wire data, Currency defaults to CurrencyUSD.
+// Wire format (CCI): currency_code(int32, 4 bytes) + amount(float64, 8 bytes) = 12 bytes.
 type CubridMonetary struct {
 	// Amount is the monetary value.
 	Amount float64
-	// Currency is the currency type. Defaults to CurrencyUSD when decoded
-	// from wire since the currency is not part of the wire encoding.
+	// Currency is the currency type.
 	Currency Currency
 }
 

@@ -67,7 +67,7 @@ func TestIntegrationCubridOidType(t *testing.T) {
 
 	// Encode/decode round-trip.
 	data := oid.Encode()
-	decoded, err := DecodeCubridOid(data)
+	decoded, err := decodeCubridOid(data)
 	if err != nil {
 		t.Fatal(err)
 	}

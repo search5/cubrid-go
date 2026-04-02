@@ -222,7 +222,7 @@ func TestLobReaderEOF(t *testing.T) {
 
 // Cover DecodeCubridOid error path
 func TestDecodeCubridOidShort(t *testing.T) {
-	_, err := DecodeCubridOid([]byte{0, 0, 0})
+	_, err := decodeCubridOid([]byte{0, 0, 0})
 	if err == nil {
 		t.Fatal("expected error for short data")
 	}
@@ -367,17 +367,17 @@ func TestGetGeneratedKeysWithBody(t *testing.T) {
 // Cover DecodeValue for remaining types
 func TestDecodeValueCoverage(t *testing.T) {
 	// USHORT
-	DecodeValue(protocol.CubridTypeUShort, []byte{0, 42})
+	decodeValue(protocol.CubridTypeUShort, []byte{0, 42})
 	// UINT
-	DecodeValue(protocol.CubridTypeUInt, []byte{0, 0, 0, 42})
+	decodeValue(protocol.CubridTypeUInt, []byte{0, 0, 0, 42})
 	// UBIGINT
-	DecodeValue(protocol.CubridTypeUBigInt, []byte{0, 0, 0, 0, 0, 0, 0, 42})
+	decodeValue(protocol.CubridTypeUBigInt, []byte{0, 0, 0, 0, 0, 0, 0, 42})
 	// NULL
-	DecodeValue(protocol.CubridTypeNull, nil)
+	decodeValue(protocol.CubridTypeNull, nil)
 	// Object
-	DecodeValue(protocol.CubridTypeObject, make([]byte, 8))
+	decodeValue(protocol.CubridTypeObject, make([]byte, 8))
 	// Unknown type
-	DecodeValue(protocol.CubridType(99), []byte{1, 2, 3})
+	decodeValue(protocol.CubridType(99), []byte{1, 2, 3})
 }
 
 // Cover XA decodeXID with body
@@ -780,7 +780,7 @@ func TestDecodeValueClob(t *testing.T) {
 	buf.Write([]byte(loc))
 	buf.WriteByte(0x00)
 
-	val, err := DecodeValue(protocol.CubridTypeClob, buf.Bytes())
+	val, err := decodeValue(protocol.CubridTypeClob, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

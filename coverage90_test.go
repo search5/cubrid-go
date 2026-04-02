@@ -327,9 +327,9 @@ func TestColumnTypeScanTypeAll(t *testing.T) {
 		{protocol.CubridType(99), reflect.TypeOf([]byte{})}, // unknown
 	}
 	for _, tt := range types {
-		got := ScanTypeForCubridType(tt.ct)
+		got := scanTypeForCubridType(tt.ct)
 		if got != tt.want {
-			t.Errorf("ScanTypeForCubridType(%v) = %v, want %v", tt.ct, got, tt.want)
+			t.Errorf("scanTypeForCubridType(%v) = %v, want %v", tt.ct, got, tt.want)
 		}
 	}
 }
@@ -723,7 +723,7 @@ func TestLobHandleValue(t *testing.T) {
 		t.Fatal("expected []byte")
 	}
 	// Verify round-trip.
-	h2, err := DecodeLobHandle(b)
+	h2, err := decodeLobHandle(b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestLobTypeString(t *testing.T) {
 
 func TestDecodeLobHandleErrors(t *testing.T) {
 	// Too short.
-	_, err := DecodeLobHandle([]byte{0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 100})
+	_, err := decodeLobHandle([]byte{0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 100})
 	if err == nil {
 		t.Fatal("expected error for short data")
 	}
@@ -755,7 +755,7 @@ func TestDecodeLobHandleErrors(t *testing.T) {
 	data := make([]byte, 17)
 	binary.BigEndian.PutUint32(data[0:4], 99)
 	binary.BigEndian.PutUint32(data[12:16], 1)
-	_, err = DecodeLobHandle(data)
+	_, err = decodeLobHandle(data)
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
@@ -764,7 +764,7 @@ func TestDecodeLobHandleErrors(t *testing.T) {
 	data2 := make([]byte, 17)
 	binary.BigEndian.PutUint32(data2[0:4], 23)
 	binary.BigEndian.PutUint32(data2[12:16], uint32(0xFFFFFFFF)) // -1
-	_, err = DecodeLobHandle(data2)
+	_, err = decodeLobHandle(data2)
 	if err == nil {
 		t.Fatal("expected error for negative locator")
 	}
@@ -784,7 +784,7 @@ func TestDecodeLobHandleAlternateTypeCodes(t *testing.T) {
 		binary.BigEndian.PutUint64(data[4:12], 50)
 		binary.BigEndian.PutUint32(data[12:16], 2)
 		copy(data[16:], "x\x00")
-		h, err := DecodeLobHandle(data)
+		h, err := decodeLobHandle(data)
 		if err != nil {
 			t.Fatalf("code %d: %v", tc.code, err)
 		}
@@ -798,7 +798,7 @@ func TestDecodeLobHandleAlternateTypeCodes(t *testing.T) {
 
 func TestLobNewClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	_, err := LobNew(context.Background(), c, LobBlob)
+	_, err := c.lobNew(context.Background(), LobBlob)
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
 	}
@@ -806,7 +806,7 @@ func TestLobNewClosed(t *testing.T) {
 
 func TestLobWriteClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	_, err := LobWrite(context.Background(), c, &CubridLobHandle{}, 0, []byte("data"))
+	_, err := c.lobWrite(context.Background(), &CubridLobHandle{}, 0, []byte("data"))
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
 	}
@@ -814,35 +814,9 @@ func TestLobWriteClosed(t *testing.T) {
 
 func TestLobReadClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	_, err := LobRead(context.Background(), c, &CubridLobHandle{}, 0, 100)
+	_, err := c.lobRead(context.Background(), &CubridLobHandle{}, 0, 100)
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
-	}
-}
-
-func TestNewLobReader(t *testing.T) {
-	c := &cubridConn{closed: true}
-	h := &CubridLobHandle{LobType: LobBlob, Size: 100}
-	r := NewLobReader(context.Background(), c, h)
-	if r == nil {
-		t.Fatal("reader should not be nil")
-	}
-	_, err := r.Read(make([]byte, 10))
-	if err == nil {
-		t.Fatal("expected error from closed conn")
-	}
-}
-
-func TestNewLobWriter(t *testing.T) {
-	c := &cubridConn{closed: true}
-	h := &CubridLobHandle{LobType: LobBlob, Size: 0}
-	w := NewLobWriter(context.Background(), c, h)
-	if w == nil {
-		t.Fatal("writer should not be nil")
-	}
-	_, err := w.Write([]byte("hello"))
-	if err == nil {
-		t.Fatal("expected error from closed conn")
 	}
 }
 
@@ -1131,12 +1105,12 @@ func TestDecodeValueAllTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			val, err := DecodeValue(tt.cubType, tt.data)
+			val, err := decodeValue(tt.cubType, tt.data)
 			if err != nil {
-				t.Fatalf("DecodeValue(%v): %v", tt.cubType, err)
+				t.Fatalf("decodeValue(%v): %v", tt.cubType, err)
 			}
 			if !tt.check(val) {
-				t.Errorf("DecodeValue(%v) = %v (%T)", tt.cubType, val, val)
+				t.Errorf("decodeValue(%v) = %v (%T)", tt.cubType, val, val)
 			}
 		})
 	}
@@ -1162,9 +1136,9 @@ func TestDecodeValueShortData(t *testing.T) {
 		{protocol.CubridTypeUBigInt, []byte{0, 0, 0, 0}},
 	}
 	for _, tt := range shortTests {
-		_, err := DecodeValue(tt.ct, tt.data)
+		_, err := decodeValue(tt.ct, tt.data)
 		if err == nil {
-			t.Errorf("DecodeValue(%v, short data) expected error", tt.ct)
+			t.Errorf("decodeValue(%v, short data) expected error", tt.ct)
 		}
 	}
 }
@@ -1191,9 +1165,9 @@ func TestEncodeBindValueAllTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := EncodeBindValue(tt.val)
+			_, _, err := encodeBindValue(tt.val)
 			if err != nil {
-				t.Errorf("EncodeBindValue(%T): %v", tt.val, err)
+				t.Errorf("encodeBindValue(%T): %v", tt.val, err)
 			}
 		})
 	}
@@ -1448,7 +1422,7 @@ func TestParseSchemaColumnMetaAllCollections(t *testing.T) {
 
 func TestDecodeCollectionValueEmpty(t *testing.T) {
 	// Empty data.
-	val, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, nil)
+	val, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeInt, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1460,7 +1434,7 @@ func TestDecodeCollectionValueEmpty(t *testing.T) {
 // --- Error tests ---
 
 func TestParseErrorResponseMalformed(t *testing.T) {
-	err := ParseErrorResponse([]byte{0, 0})
+	err := parseErrorResponse([]byte{0, 0})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -1761,7 +1735,7 @@ func TestPrepareAndQuerySendsRequest(t *testing.T) {
 
 func TestOidGetClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	_, err := OidGet(context.Background(), c, &CubridOid{PageID: 1}, []string{"id"})
+	_, err := c.oidGet(context.Background(), &CubridOid{PageID: 1}, []string{"id"})
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
 	}
@@ -1769,7 +1743,7 @@ func TestOidGetClosed(t *testing.T) {
 
 func TestOidPutClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	err := OidPut(context.Background(), c, &CubridOid{PageID: 1}, map[string]interface{}{"name": "test"})
+	err := c.oidPut(context.Background(), &CubridOid{PageID: 1}, map[string]interface{}{"name": "test"})
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
 	}
@@ -1782,7 +1756,7 @@ func TestOidPutWithNullValue(t *testing.T) {
 		casInfo: protocol.NewCASInfo(),
 		dsn:     DSN{Host: "192.0.2.1", Port: 33000, ConnectTimeout: 50 * time.Millisecond},
 	}
-	err := OidPut(context.Background(), c, &CubridOid{PageID: 1}, map[string]interface{}{"name": nil})
+	err := c.oidPut(context.Background(), &CubridOid{PageID: 1}, map[string]interface{}{"name": nil})
 	if err == nil {
 		t.Fatal("expected error from mock")
 	}
@@ -1795,7 +1769,7 @@ func TestOidGetSendsRequest(t *testing.T) {
 		casInfo: protocol.NewCASInfo(),
 		dsn:     DSN{Host: "192.0.2.1", Port: 33000, ConnectTimeout: 50 * time.Millisecond},
 	}
-	_, err := OidGet(context.Background(), c, &CubridOid{PageID: 1, SlotID: 2, VolID: 3}, []string{"id", "name"})
+	_, err := c.oidGet(context.Background(), &CubridOid{PageID: 1, SlotID: 2, VolID: 3}, []string{"id", "name"})
 	if err == nil {
 		t.Fatal("expected error from mock")
 	}
@@ -1805,7 +1779,7 @@ func TestOidGetSendsRequest(t *testing.T) {
 
 func TestSchemaInfoClosed(t *testing.T) {
 	c := &cubridConn{closed: true}
-	_, err := SchemaInfo(context.Background(), c, SchemaClass, "", "", SchemaFlagExact)
+	_, err := schemaInfo(context.Background(), c, SchemaClass, "", "", SchemaFlagExact)
 	if err != driver.ErrBadConn {
 		t.Fatalf("expected ErrBadConn, got %v", err)
 	}
@@ -1864,7 +1838,7 @@ func TestDecodeTimestampTzFull(t *testing.T) {
 	binary.BigEndian.PutUint16(data[10:12], 45)
 	copy(data[12:], "UTC\x00")
 
-	val, err := DecodeValue(protocol.CubridTypeTsTz, data)
+	val, err := decodeValue(protocol.CubridTypeTsTz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1888,7 +1862,7 @@ func TestDecodeDatetimeTzFull(t *testing.T) {
 	binary.BigEndian.PutUint16(data[12:14], 500)
 	copy(data[14:], "+09:00\x00")
 
-	val, err := DecodeValue(protocol.CubridTypeDtTz, data)
+	val, err := decodeValue(protocol.CubridTypeDtTz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1911,7 +1885,7 @@ func TestDecodeTimestampLtz(t *testing.T) {
 	binary.BigEndian.PutUint16(data[10:12], 0)
 	copy(data[12:], "UTC\x00")
 
-	val, err := DecodeValue(protocol.CubridTypeTsLtz, data)
+	val, err := decodeValue(protocol.CubridTypeTsLtz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1931,7 +1905,7 @@ func TestDecodeDatetimeLtz(t *testing.T) {
 	binary.BigEndian.PutUint16(data[12:14], 0)
 	copy(data[14:], "UTC\x00")
 
-	val, err := DecodeValue(protocol.CubridTypeDtLtz, data)
+	val, err := decodeValue(protocol.CubridTypeDtLtz, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1952,7 +1926,7 @@ func TestDecodeValueBlob(t *testing.T) {
 	buf.Write([]byte(loc))
 	buf.WriteByte(0x00)
 
-	val, err := DecodeValue(protocol.CubridTypeBlob, buf.Bytes())
+	val, err := decodeValue(protocol.CubridTypeBlob, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1967,7 +1941,7 @@ func TestDecodeValueBlob(t *testing.T) {
 
 func TestDecodeValueBlobSmall(t *testing.T) {
 	// Small data (not a LOB handle).
-	val, err := DecodeValue(protocol.CubridTypeBlob, []byte{1, 2, 3, 4})
+	val, err := decodeValue(protocol.CubridTypeBlob, []byte{1, 2, 3, 4})
 	if err != nil {
 		t.Fatal(err)
 	}

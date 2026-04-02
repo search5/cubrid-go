@@ -184,6 +184,41 @@ func (r *cubridRows) fetchMore() error {
 	return nil
 }
 
+// hasNext reports whether there is a next row available (possibly after fetching).
+func (r *cubridRows) hasNext() bool {
+	if r.closed {
+		return false
+	}
+	if r.bufferIdx < len(r.buffer) {
+		return true
+	}
+	if r.done {
+		return false
+	}
+	if err := r.fetchMore(); err != nil || len(r.buffer) == 0 {
+		r.done = true
+		return false
+	}
+	return r.bufferIdx < len(r.buffer)
+}
+
+// scanRow copies the current row values into dest and advances the cursor.
+func (r *cubridRows) scanRow(dest ...interface{}) error {
+	if r.bufferIdx >= len(r.buffer) {
+		return fmt.Errorf("cubrid: no current row")
+	}
+	row := r.buffer[r.bufferIdx]
+	r.bufferIdx++
+	for i, v := range row {
+		if i < len(dest) {
+			if ptr, ok := dest[i].(*interface{}); ok {
+				*ptr = v
+			}
+		}
+	}
+	return nil
+}
+
 // --- ColumnType interfaces for GORM, Atlas, sqlx compatibility ---
 
 // ColumnTypeDatabaseTypeName returns the CUBRID type name.
@@ -207,7 +242,7 @@ func (r *cubridRows) ColumnTypeScanType(index int) reflect.Type {
 	if index < 0 || index >= len(r.columns) {
 		return reflect.TypeOf([]byte{})
 	}
-	return ScanTypeForCubridType(r.columns[index].Type)
+	return scanTypeForCubridType(r.columns[index].Type)
 }
 
 // ColumnTypeLength returns the column length (for variable-length types).

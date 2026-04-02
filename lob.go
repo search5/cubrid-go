@@ -3,6 +3,7 @@ package cubrid
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -59,7 +60,7 @@ func (h *CubridLobHandle) Encode() []byte {
 }
 
 // DecodeLobHandle deserializes a LOB handle from wire data.
-func DecodeLobHandle(data []byte) (*CubridLobHandle, error) {
+func decodeLobHandle(data []byte) (*CubridLobHandle, error) {
 	if len(data) < 17 {
 		return nil, fmt.Errorf("cubrid: LOB handle requires at least 17 bytes, got %d", len(data))
 	}
@@ -105,7 +106,7 @@ func (h *CubridLobHandle) Scan(src interface{}) error {
 		*h = *v
 		return nil
 	case []byte:
-		decoded, err := DecodeLobHandle(v)
+		decoded, err := decodeLobHandle(v)
 		if err != nil {
 			return err
 		}
@@ -124,11 +125,28 @@ func (h *CubridLobHandle) Scan(src interface{}) error {
 const lobChunkSize = 1024 * 1024 // 1 MB per read/write chunk
 
 // LobNew creates a new empty LOB on the server and returns its handle.
-func LobNew(ctx context.Context, conn *cubridConn, lobType LobType) (*CubridLobHandle, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+func LobNew(ctx context.Context, conn *sql.Conn, lobType LobType) (*CubridLobHandle, error) {
+	var result *CubridLobHandle
+	err := conn.Raw(func(driverConn interface{}) error {
+		c, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: LobNew requires a cubrid connection")
+		}
+		h, err := c.lobNew(ctx, lobType)
+		if err != nil {
+			return err
+		}
+		result = h
+		return nil
+	})
+	return result, err
+}
 
-	if conn.closed {
+func (c *cubridConn) lobNew(ctx context.Context, lobType LobType) (*CubridLobHandle, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return nil, driver.ErrBadConn
 	}
 
@@ -136,45 +154,58 @@ func LobNew(ctx context.Context, conn *cubridConn, lobType LobType) (*CubridLobH
 	protocol.WriteInt(&buf, 4)
 	protocol.WriteInt(&buf, int32(lobType))
 
-	frame, err := conn.sendRequestCtx(ctx, protocol.FuncCodeLOBNew, buf.Bytes())
+	frame, err := c.sendRequestCtx(ctx, protocol.FuncCodeLOBNew, buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	if err := conn.checkError(frame); err != nil {
+	if err := c.checkError(frame); err != nil {
 		return nil, err
 	}
 
-	// Response body contains the LOB handle.
-	return DecodeLobHandle(frame.Body)
+	return decodeLobHandle(frame.Body)
 }
 
 // LobWrite writes data to a LOB at the given offset.
 // Returns the number of bytes written.
-func LobWrite(ctx context.Context, conn *cubridConn, handle *CubridLobHandle, offset int64, data []byte) (int, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+func LobWrite(ctx context.Context, conn *sql.Conn, handle *CubridLobHandle, offset int64, data []byte) (int, error) {
+	var result int
+	err := conn.Raw(func(driverConn interface{}) error {
+		c, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: LobWrite requires a cubrid connection")
+		}
+		n, err := c.lobWrite(ctx, handle, offset, data)
+		if err != nil {
+			return err
+		}
+		result = n
+		return nil
+	})
+	return result, err
+}
 
-	if conn.closed {
+func (c *cubridConn) lobWrite(ctx context.Context, handle *CubridLobHandle, offset int64, data []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return 0, driver.ErrBadConn
 	}
 
 	handleBytes := handle.Encode()
 	var buf bytes.Buffer
-	// LOB handle (length-prefixed).
 	protocol.WriteInt(&buf, int32(len(handleBytes)))
 	buf.Write(handleBytes)
-	// Offset.
 	protocol.WriteInt(&buf, 8)
 	protocol.WriteLong(&buf, offset)
-	// Data (length-prefixed).
 	protocol.WriteInt(&buf, int32(len(data)))
 	buf.Write(data)
 
-	frame, err := conn.sendRequestCtx(ctx, protocol.FuncCodeLOBWrite, buf.Bytes())
+	frame, err := c.sendRequestCtx(ctx, protocol.FuncCodeLOBWrite, buf.Bytes())
 	if err != nil {
 		return 0, err
 	}
-	if err := conn.checkError(frame); err != nil {
+	if err := c.checkError(frame); err != nil {
 		return 0, err
 	}
 
@@ -183,31 +214,45 @@ func LobWrite(ctx context.Context, conn *cubridConn, handle *CubridLobHandle, of
 
 // LobRead reads data from a LOB at the given offset.
 // Returns the data read (up to length bytes).
-func LobRead(ctx context.Context, conn *cubridConn, handle *CubridLobHandle, offset int64, length int) ([]byte, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+func LobRead(ctx context.Context, conn *sql.Conn, handle *CubridLobHandle, offset int64, length int) ([]byte, error) {
+	var result []byte
+	err := conn.Raw(func(driverConn interface{}) error {
+		c, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: LobRead requires a cubrid connection")
+		}
+		data, err := c.lobRead(ctx, handle, offset, length)
+		if err != nil {
+			return err
+		}
+		result = data
+		return nil
+	})
+	return result, err
+}
 
-	if conn.closed {
+func (c *cubridConn) lobRead(ctx context.Context, handle *CubridLobHandle, offset int64, length int) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return nil, driver.ErrBadConn
 	}
 
 	handleBytes := handle.Encode()
 	var buf bytes.Buffer
-	// LOB handle (length-prefixed).
 	protocol.WriteInt(&buf, int32(len(handleBytes)))
 	buf.Write(handleBytes)
-	// Offset.
 	protocol.WriteInt(&buf, 8)
 	protocol.WriteLong(&buf, offset)
-	// Length.
 	protocol.WriteInt(&buf, 4)
 	protocol.WriteInt(&buf, int32(length))
 
-	frame, err := conn.sendRequestCtx(ctx, protocol.FuncCodeLOBRead, buf.Bytes())
+	frame, err := c.sendRequestCtx(ctx, protocol.FuncCodeLOBRead, buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	if err := conn.checkError(frame); err != nil {
+	if err := c.checkError(frame); err != nil {
 		return nil, err
 	}
 
@@ -219,13 +264,13 @@ func LobRead(ctx context.Context, conn *cubridConn, handle *CubridLobHandle, off
 // LobReader provides an io.Reader interface for reading LOB data.
 type LobReader struct {
 	ctx    context.Context
-	conn   *cubridConn
+	conn   *sql.Conn
 	handle *CubridLobHandle
 	offset int64
 }
 
 // NewLobReader creates a reader that streams LOB data from the server.
-func NewLobReader(ctx context.Context, conn *cubridConn, handle *CubridLobHandle) *LobReader {
+func NewLobReader(ctx context.Context, conn *sql.Conn, handle *CubridLobHandle) *LobReader {
 	return &LobReader{ctx: ctx, conn: conn, handle: handle, offset: 0}
 }
 
@@ -261,13 +306,13 @@ func (r *LobReader) Read(p []byte) (int, error) {
 // LobWriter provides an io.Writer interface for writing LOB data.
 type LobWriter struct {
 	ctx    context.Context
-	conn   *cubridConn
+	conn   *sql.Conn
 	handle *CubridLobHandle
 	offset int64
 }
 
 // NewLobWriter creates a writer that streams LOB data to the server.
-func NewLobWriter(ctx context.Context, conn *cubridConn, handle *CubridLobHandle) *LobWriter {
+func NewLobWriter(ctx context.Context, conn *sql.Conn, handle *CubridLobHandle) *LobWriter {
 	return &LobWriter{ctx: ctx, conn: conn, handle: handle, offset: 0}
 }
 
@@ -287,7 +332,7 @@ func (w *LobWriter) Write(p []byte) (int, error) {
 
 		total += n
 		w.offset += int64(n)
-		w.handle.Size = w.offset // Update handle size.
+		w.handle.Size = w.offset
 	}
 	return total, nil
 }

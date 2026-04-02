@@ -87,7 +87,7 @@ func (c *cubridConn) cursorUpdate(ctx context.Context, queryHandle int32, cursor
 
 	// Column values.
 	for i, val := range values {
-		data, cubType, err := EncodeBindValue(val)
+		data, cubType, err := encodeBindValue(val)
 		if err != nil {
 			return fmt.Errorf("cubrid: encode cursor update value %d: %w", i+1, err)
 		}

@@ -173,7 +173,7 @@ func (s *cubridStmt) execute(ctx context.Context, args []driver.NamedValue, isQu
 	// [4-byte len=1][1-byte type_code] [4-byte value_len][N-byte value]
 	// For NULL: [4-byte len=1][1-byte type_code] [4-byte len=0]
 	for _, arg := range args {
-		data, cubType, err := EncodeBindValue(arg.Value)
+		data, cubType, err := encodeBindValue(arg.Value)
 		if err != nil {
 			return nil, fmt.Errorf("cubrid: encode param %d: %w", arg.Ordinal, err)
 		}
@@ -248,17 +248,11 @@ func parseExecResult(conn *cubridConn, frame *protocol.ResponseFrame) (*cubridRe
 		if i == 0 {
 			result.rowsAffected = int64(affected)
 		}
-		// OID (8 bytes).
-		oidBytes, err := protocol.ReadBytes(r, 8)
-		if err != nil {
+		// OID (8 bytes) — read and discard.
+		// Note: CCI does NOT provide last insert ID in the EXECUTE response.
+		// Use GetLastInsertID() (FC 40) or SELECT LAST_INSERT_ID() instead.
+		if _, err := protocol.ReadBytes(r, 8); err != nil {
 			return result, nil
-		}
-		// For the first INSERT result, extract OID page ID as a rough last insert ID.
-		if i == 0 && len(oidBytes) >= 4 {
-			pageID := int64(oidBytes[0])<<24 | int64(oidBytes[1])<<16 | int64(oidBytes[2])<<8 | int64(oidBytes[3])
-			if pageID > 0 {
-				result.lastInsertID = pageID
-			}
 		}
 		// Cache time.
 		if _, err := protocol.ReadInt(r); err != nil {
@@ -431,9 +425,9 @@ func parseTuples(r io.Reader, count int, columns []ColumnMeta) ([][]interface{},
 			var val interface{}
 			switch col.Type {
 			case protocol.CubridTypeSet, protocol.CubridTypeMultiSet, protocol.CubridTypeSequence:
-				val, err = DecodeCollectionValue(col.Type, col.ElementType, data)
+				val, err = decodeCollectionValue(col.Type, col.ElementType, data)
 			default:
-				val, err = DecodeValue(col.Type, data)
+				val, err = decodeValue(col.Type, data)
 			}
 			if err != nil {
 				return tuples, fmt.Errorf("column %d (%s): %w", j, col.Name, err)

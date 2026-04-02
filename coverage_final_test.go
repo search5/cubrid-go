@@ -395,7 +395,7 @@ func TestDecodeCollectionValueDefault(t *testing.T) {
 	binary.Write(&buf, binary.BigEndian, int32(42))
 
 	// Use unknown collection type (not SET/MULTISET/SEQUENCE).
-	val, err := DecodeCollectionValue(protocol.CubridType(99), protocol.CubridTypeInt, buf.Bytes())
+	val, err := decodeCollectionValue(protocol.CubridType(99), protocol.CubridTypeInt, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

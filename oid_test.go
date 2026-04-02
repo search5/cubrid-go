@@ -87,7 +87,7 @@ func TestCubridOidEncode(t *testing.T) {
 
 func TestCubridOidDecode(t *testing.T) {
 	data := []byte{0x00, 0x00, 0x30, 0x39, 0x00, 0x43, 0x00, 0x59} // 12345, 67, 89
-	oid, err := DecodeCubridOid(data)
+	oid, err := decodeCubridOid(data)
 	if err != nil {
 		t.Fatal(err)
 	}

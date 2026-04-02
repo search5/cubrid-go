@@ -2,6 +2,7 @@ package cubrid
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -16,6 +17,24 @@ const (
 	IsolationRepeatableRead IsolationLevel = 5
 	IsolationSerializable   IsolationLevel = 6
 )
+
+// LoadBalanceMode controls how the driver distributes connections across brokers.
+type LoadBalanceMode string
+
+const (
+	// LBRoundRobin distributes connections evenly across all brokers.
+	LBRoundRobin LoadBalanceMode = "round_robin"
+	// LBFailover always connects to the first available broker.
+	LBFailover LoadBalanceMode = "failover"
+	// LBRandom picks a random broker for each connection.
+	LBRandom LoadBalanceMode = "random"
+)
+
+// HostPort represents a single broker endpoint.
+type HostPort struct {
+	Host string
+	Port int
+}
 
 const (
 	defaultPort           = 33000
@@ -38,10 +57,19 @@ type DSN struct {
 	QueryTimeout   time.Duration
 	IsolationLevel IsolationLevel
 	LockTimeout    time.Duration
+
+	// HA / Load Balancing fields.
+	// Hosts holds all broker endpoints (including the primary Host:Port).
+	// Populated when multiple hosts are specified in the DSN.
+	Hosts         []HostPort
+	HA            bool            // Enable HA mode.
+	LoadBalance   LoadBalanceMode // Load balancing strategy.
+	ReadWriteSplit bool           // Route reads to standby, writes to active.
 }
 
 // ParseDSN parses a CUBRID DSN string.
 // Format: cubrid://user:password@host:port/dbname?param=value
+// Multi-host: cubrid://user:password@host1:port1,host2:port2/dbname?ha=true&lb=round_robin
 // The "cubrid://" scheme prefix is optional.
 func ParseDSN(dsn string) (DSN, error) {
 	if dsn == "" {
@@ -53,7 +81,13 @@ func ParseDSN(dsn string) (DSN, error) {
 		dsn = "cubrid://" + dsn
 	}
 
-	u, err := url.Parse(dsn)
+	// Extract multi-host before url.Parse (which doesn't support commas in host).
+	hosts, parseable, err := extractMultiHost(dsn)
+	if err != nil {
+		return DSN{}, err
+	}
+
+	u, err := url.Parse(parseable)
 	if err != nil {
 		return DSN{}, fmt.Errorf("cubrid: invalid DSN: %w", err)
 	}
@@ -63,9 +97,10 @@ func ParseDSN(dsn string) (DSN, error) {
 		Charset:        defaultCharset,
 		ConnectTimeout: defaultConnectTimeout,
 		IsolationLevel: defaultIsolationLevel,
+		LoadBalance:    LBFailover,
 	}
 
-	// Host
+	// Host (first host from the list or the single host).
 	d.Host = u.Hostname()
 	if d.Host == "" {
 		return DSN{}, fmt.Errorf("cubrid: missing host in DSN")
@@ -83,6 +118,13 @@ func ParseDSN(dsn string) (DSN, error) {
 		if d.Port < 1 || d.Port > 65535 {
 			return DSN{}, fmt.Errorf("cubrid: port %d out of range (1-65535)", d.Port)
 		}
+	}
+
+	// Multi-host list.
+	if len(hosts) > 1 {
+		d.Hosts = hosts
+	} else {
+		d.Hosts = []HostPort{{Host: d.Host, Port: d.Port}}
 	}
 
 	// Database
@@ -134,12 +176,116 @@ func ParseDSN(dsn string) (DSN, error) {
 			if err != nil {
 				return DSN{}, fmt.Errorf("cubrid: invalid lock_timeout %q: %w", val, err)
 			}
+		case "ha":
+			d.HA, err = strconv.ParseBool(val)
+			if err != nil {
+				return DSN{}, fmt.Errorf("cubrid: invalid ha value %q: %w", val, err)
+			}
+		case "lb":
+			switch LoadBalanceMode(val) {
+			case LBRoundRobin, LBFailover, LBRandom:
+				d.LoadBalance = LoadBalanceMode(val)
+			default:
+				return DSN{}, fmt.Errorf("cubrid: unknown lb mode %q (valid: round_robin, failover, random)", val)
+			}
+		case "rw_split":
+			d.ReadWriteSplit, err = strconv.ParseBool(val)
+			if err != nil {
+				return DSN{}, fmt.Errorf("cubrid: invalid rw_split value %q: %w", val, err)
+			}
 		default:
 			return DSN{}, fmt.Errorf("cubrid: unknown DSN parameter %q", key)
 		}
 	}
 
 	return d, nil
+}
+
+// extractMultiHost parses comma-separated hosts from the DSN and returns
+// the host list plus a parseable URL (with only the first host for url.Parse).
+func extractMultiHost(dsn string) ([]HostPort, string, error) {
+	// Find the authority section between "://" and the next "/".
+	schemeEnd := strings.Index(dsn, "://")
+	if schemeEnd < 0 {
+		return nil, dsn, nil
+	}
+	rest := dsn[schemeEnd+3:]
+
+	// Split off userinfo@ if present.
+	atIdx := strings.Index(rest, "@")
+	pathIdx := strings.Index(rest, "/")
+
+	var hostPart string
+	if atIdx >= 0 && (pathIdx < 0 || atIdx < pathIdx) {
+		// There is userinfo.
+		if pathIdx >= 0 {
+			hostPart = rest[atIdx+1 : pathIdx]
+		} else {
+			hostPart = rest[atIdx+1:]
+		}
+	} else {
+		if pathIdx >= 0 {
+			hostPart = rest[:pathIdx]
+		} else {
+			hostPart = rest
+		}
+	}
+
+	// Check for comma-separated hosts.
+	if !strings.Contains(hostPart, ",") {
+		// Single host — parse normally.
+		hp, err := parseHostPort(hostPart)
+		if err != nil {
+			return nil, dsn, err
+		}
+		return []HostPort{hp}, dsn, nil
+	}
+
+	// Multiple hosts.
+	parts := strings.Split(hostPart, ",")
+	hosts := make([]HostPort, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		hp, err := parseHostPort(part)
+		if err != nil {
+			return nil, "", err
+		}
+		hosts = append(hosts, hp)
+	}
+
+	if len(hosts) == 0 {
+		return nil, "", fmt.Errorf("cubrid: no valid hosts in DSN")
+	}
+
+	// Rewrite DSN to use only the first host for url.Parse compatibility.
+	firstHost := fmt.Sprintf("%s:%d", hosts[0].Host, hosts[0].Port)
+	parseable := dsn[:schemeEnd+3] + strings.Replace(rest, hostPart, firstHost, 1)
+
+	return hosts, parseable, nil
+}
+
+// parseHostPort parses "host:port" or "host" (defaulting to 33000).
+func parseHostPort(s string) (HostPort, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return HostPort{}, fmt.Errorf("cubrid: empty host")
+	}
+	host, portStr, err := net.SplitHostPort(s)
+	if err != nil {
+		// No port specified — use default.
+		return HostPort{Host: s, Port: defaultPort}, nil
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return HostPort{}, fmt.Errorf("cubrid: invalid port in %q: %w", s, err)
+	}
+	if port < 1 || port > 65535 {
+		return HostPort{}, fmt.Errorf("cubrid: port %d out of range (1-65535)", port)
+	}
+	return HostPort{Host: host, Port: port}, nil
 }
 
 // String returns the DSN as a connection string.
@@ -163,15 +309,34 @@ func (d DSN) String() string {
 	if d.LockTimeout != 0 {
 		params = append(params, "lock_timeout="+d.LockTimeout.String())
 	}
+	if d.HA {
+		params = append(params, "ha=true")
+	}
+	if d.LoadBalance != "" && d.LoadBalance != LBFailover {
+		params = append(params, "lb="+string(d.LoadBalance))
+	}
+	if d.ReadWriteSplit {
+		params = append(params, "rw_split=true")
+	}
 
 	query := ""
 	if len(params) > 0 {
 		query = "?" + strings.Join(params, "&")
 	}
 
-	return fmt.Sprintf("cubrid://%s:%s@%s:%d/%s%s",
+	// Build host part (multi-host or single).
+	hostPart := fmt.Sprintf("%s:%d", d.Host, d.Port)
+	if len(d.Hosts) > 1 {
+		parts := make([]string, len(d.Hosts))
+		for i, hp := range d.Hosts {
+			parts[i] = fmt.Sprintf("%s:%d", hp.Host, hp.Port)
+		}
+		hostPart = strings.Join(parts, ",")
+	}
+
+	return fmt.Sprintf("cubrid://%s:%s@%s/%s%s",
 		url.User(d.User).String(), d.Password,
-		d.Host, d.Port, d.Database, query)
+		hostPart, d.Database, query)
 }
 
 func parseIsolationLevel(s string) (IsolationLevel, error) {

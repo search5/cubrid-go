@@ -30,7 +30,7 @@ func TestParseErrorResponse(t *testing.T) {
 		't', 'a', 'b', 'l', 'e', ' ', 'n', 'o', 't', ' ', 'f', 'o', 'u', 'n', 'd', 0x00,
 	}
 
-	err := ParseErrorResponse(body)
+	err := parseErrorResponse(body)
 	if err == nil {
 		t.Fatal("expected error")
 	}

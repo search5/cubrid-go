@@ -152,7 +152,7 @@ func TestIntegrationSchemaInfoProtocol(t *testing.T) {
 	}
 	defer conn.Close()
 
-	rows, err := SchemaInfo(context.Background(), conn, SchemaClass, "", "", SchemaFlagExact)
+	rows, err := schemaInfo(context.Background(), conn, SchemaClass, "", "", SchemaFlagExact)
 	if err != nil {
 		t.Fatalf("SchemaInfo: %v", err)
 	}

@@ -279,7 +279,7 @@ func (c *cubridConn) readOpenDatabaseResponse() (*protocol.OpenDatabaseResponse,
 	if firstInt < 0 {
 		// Error response: parse error code and message from remaining body.
 		if len(body) >= 8 {
-			return nil, ParseErrorResponse(body[4:])
+			return nil, parseErrorResponse(body[4:])
 		}
 		return nil, fmt.Errorf("cubrid: authentication failed (code %d)", firstInt)
 	}
@@ -291,7 +291,7 @@ func (c *cubridConn) readOpenDatabaseResponse() (*protocol.OpenDatabaseResponse,
 func (c *cubridConn) checkError(frame *protocol.ResponseFrame) error {
 	if frame.ResponseCode < 0 {
 		if len(frame.Body) >= 4 {
-			return ParseErrorResponse(frame.Body)
+			return parseErrorResponse(frame.Body)
 		}
 		return &CubridError{Code: frame.ResponseCode, Message: "unknown error"}
 	}

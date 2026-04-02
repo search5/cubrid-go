@@ -137,67 +137,61 @@ func TestIntegrationLobStreamingRaw(t *testing.T) {
 	conn := openTestConn(t, db)
 	defer conn.Close()
 
-	conn.Raw(func(dc interface{}) error {
-		c := dc.(*cubridConn)
+	// BLOB: new, write, read
+	blobHandle, err := LobNew(ctx, conn, LobBlob)
+	if err != nil {
+		t.Fatalf("LobNew BLOB: %v", err)
+	}
+	t.Logf("BLOB handle: %s", blobHandle.String())
 
-		// BLOB: new, write, read
-		blobHandle, err := LobNew(ctx, c, LobBlob)
+	testData := []byte("Hello CUBRID LOB streaming test data! This should be long enough.")
+	n, err := LobWrite(ctx, conn, blobHandle, 0, testData)
+	if err != nil {
+		t.Fatalf("LobWrite: %v", err)
+	}
+	t.Logf("LobWrite: %d bytes", n)
+	blobHandle.Size = int64(n) // Update size after write
+
+	readData, err := LobRead(ctx, conn, blobHandle, 0, len(testData))
+	if err != nil {
+		t.Fatalf("LobRead: %v", err)
+	}
+	t.Logf("LobRead: %d bytes", len(readData))
+
+	// CLOB: new, write, read
+	clobHandle, err := LobNew(ctx, conn, LobClob)
+	if err != nil {
+		t.Fatalf("LobNew CLOB: %v", err)
+	}
+
+	clobData := []byte("CLOB text content for coverage test.")
+	LobWrite(ctx, conn, clobHandle, 0, clobData)
+
+	// LobReader streaming
+	reader := NewLobReader(ctx, conn, blobHandle)
+	buf := make([]byte, 20)
+	total := 0
+	for {
+		rn, err := reader.Read(buf)
+		total += rn
 		if err != nil {
-			t.Fatalf("LobNew BLOB: %v", err)
+			break
 		}
-		t.Logf("BLOB handle: %s", blobHandle.String())
+	}
+	t.Logf("LobReader total: %d bytes", total)
 
-		testData := []byte("Hello CUBRID LOB streaming test data! This should be long enough.")
-		n, err := LobWrite(ctx, c, blobHandle, 0, testData)
-		if err != nil {
-			t.Fatalf("LobWrite: %v", err)
-		}
-		t.Logf("LobWrite: %d bytes", n)
-		blobHandle.Size = int64(n) // Update size after write
+	// LobWriter streaming
+	blobHandle2, _ := LobNew(ctx, conn, LobBlob)
+	writer := NewLobWriter(ctx, conn, blobHandle2)
+	wn, err := writer.Write([]byte("streaming write"))
+	t.Logf("LobWriter: wrote %d bytes, err=%v", wn, err)
 
-		readData, err := LobRead(ctx, c, blobHandle, 0, len(testData))
-		if err != nil {
-			t.Fatalf("LobRead: %v", err)
-		}
-		t.Logf("LobRead: %d bytes", len(readData))
+	// Encode/Value
+	encoded := blobHandle.Encode()
+	t.Logf("LOB Encode: %d bytes", len(encoded))
 
-		// CLOB: new, write, read
-		clobHandle, err := LobNew(ctx, c, LobClob)
-		if err != nil {
-			t.Fatalf("LobNew CLOB: %v", err)
-		}
-
-		clobData := []byte("CLOB text content for coverage test.")
-		LobWrite(ctx, c, clobHandle, 0, clobData)
-
-		// LobReader streaming
-		reader := NewLobReader(ctx, c, blobHandle)
-		buf := make([]byte, 20)
-		total := 0
-		for {
-			rn, err := reader.Read(buf)
-			total += rn
-			if err != nil {
-				break
-			}
-		}
-		t.Logf("LobReader total: %d bytes", total)
-
-		// LobWriter streaming
-		blobHandle2, _ := LobNew(ctx, c, LobBlob)
-		writer := NewLobWriter(ctx, c, blobHandle2)
-		wn, err := writer.Write([]byte("streaming write"))
-		t.Logf("LobWriter: wrote %d bytes, err=%v", wn, err)
-
-		// Encode/Value
-		encoded := blobHandle.Encode()
-		t.Logf("LOB Encode: %d bytes", len(encoded))
-
-		val, err := blobHandle.Value()
-		t.Logf("LOB Value: %v, err=%v", val != nil, err)
-
-		return nil
-	})
+	val, err := blobHandle.Value()
+	t.Logf("LOB Value: %v, err=%v", val != nil, err)
 }
 
 // ==========================================================================
@@ -758,7 +752,7 @@ func TestIntegrationScanTypeAll(t *testing.T) {
 		{protocol.CubridTypeBit, reflect.TypeOf([]byte{})},
 	}
 	for _, tt := range types {
-		got := ScanTypeForCubridType(tt.ct)
+		got := scanTypeForCubridType(tt.ct)
 		if got != tt.want {
 			t.Errorf("ScanType(%v): got %v, want %v", tt.ct, got, tt.want)
 		}
@@ -771,8 +765,8 @@ func TestIntegrationScanTypeAll(t *testing.T) {
 
 func TestIntegrationErrorPaths(t *testing.T) {
 	// ParseErrorResponse
-	err := ParseErrorResponse([]byte{0, 0, 0, 1, 'e', 'r', 'r', 0})
-	t.Logf("ParseErrorResponse: %v", err)
+	err := parseErrorResponse([]byte{0, 0, 0, 1, 'e', 'r', 'r', 0})
+	t.Logf("parseErrorResponse: %v", err)
 
 	// CubridError.Is
 	e1 := &CubridError{Code: -1000}
@@ -848,7 +842,7 @@ func TestIntegrationSchemaRowsDirect(t *testing.T) {
 
 	conn.Raw(func(dc interface{}) error {
 		c := dc.(*cubridConn)
-		sr, err := SchemaInfo(ctx, c, SchemaClass, "", "", SchemaFlagExact)
+		sr, err := schemaInfo(ctx, c, SchemaClass, "", "", SchemaFlagExact)
 		if err != nil {
 			t.Fatalf("SchemaInfo: %v", err)
 		}
@@ -913,16 +907,12 @@ func TestIntegrationOidGetValidHandle(t *testing.T) {
 
 	t.Logf("Got OID: %s", oid.String())
 
-	conn.Raw(func(dc interface{}) error {
-		c := dc.(*cubridConn)
-		result, err := OidGet(ctx, c, oid, []string{"id", "name"})
-		if err != nil {
-			t.Logf("OidGet: %v", err)
-		} else {
-			t.Logf("OidGet result: %v", result)
-		}
-		return nil
-	})
+	result, err := OidGet(ctx, conn, oid, []string{"id", "name"})
+	if err != nil {
+		t.Logf("OidGet: %v", err)
+	} else {
+		t.Logf("OidGet result: %v", result)
+	}
 }
 
 // ==========================================================================
@@ -1088,37 +1078,32 @@ func TestIntegrationLobReadFullCycle(t *testing.T) {
 	conn, _ := db.Conn(ctx)
 	defer conn.Close()
 
-	conn.Raw(func(dc interface{}) error {
-		c := dc.(*cubridConn)
+	// Create and write a larger BLOB
+	handle, err := LobNew(ctx, conn, LobBlob)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		// Create and write a larger BLOB
-		handle, err := LobNew(ctx, c, LobBlob)
+	// Write 500 bytes
+	data := make([]byte, 500)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+	n2, _ := LobWrite(ctx, conn, handle, 0, data)
+	handle.Size = int64(n2) // Update size for LobReader
+
+	// Read back using LobReader
+	lobReader := NewLobReader(ctx, conn, handle)
+	total := 0
+	buf := make([]byte, 64)
+	for {
+		n, err := lobReader.Read(buf)
+		total += n
 		if err != nil {
-			t.Fatal(err)
+			break
 		}
-
-		// Write 500 bytes
-		data := make([]byte, 500)
-		for i := range data {
-			data[i] = byte(i % 256)
-		}
-		n2, _ := LobWrite(ctx, c, handle, 0, data)
-		handle.Size = int64(n2) // Update size for LobReader
-
-		// Read back using LobReader
-		reader := NewLobReader(ctx, c, handle)
-		total := 0
-		buf := make([]byte, 64)
-		for {
-			n, err := reader.Read(buf)
-			total += n
-			if err != nil {
-				break
-			}
-		}
-		t.Logf("LobReader full cycle: read %d bytes (wrote %d)", total, len(data))
-		return nil
-	})
+	}
+	t.Logf("LobReader full cycle: read %d bytes (wrote %d)", total, len(data))
 }
 
 // ==========================================================================
@@ -1226,18 +1211,12 @@ func TestIntegrationOidGetPut(t *testing.T) {
 	conn, _ := db.Conn(ctx)
 	defer conn.Close()
 
-	conn.Raw(func(dc interface{}) error {
-		c := dc.(*cubridConn)
+	// OidGet with a null OID (test error handling)
+	nullOid := NewCubridOid(0, 0, 0)
+	_, err = OidGet(ctx, conn, nullOid, []string{"id", "name"})
+	t.Logf("OidGet null OID: %v", err)
 
-		// OidGet with a null OID (test error handling)
-		nullOid := NewCubridOid(0, 0, 0)
-		_, err := OidGet(ctx, c, nullOid, []string{"id", "name"})
-		t.Logf("OidGet null OID: %v", err)
-
-		// OidPut with a null OID
-		err = OidPut(ctx, c, nullOid, map[string]interface{}{"name": "updated"})
-		t.Logf("OidPut null OID: %v", err)
-
-		return nil
-	})
+	// OidPut with a null OID
+	err = OidPut(ctx, conn, nullOid, map[string]interface{}{"name": "updated"})
+	t.Logf("OidPut null OID: %v", err)
 }

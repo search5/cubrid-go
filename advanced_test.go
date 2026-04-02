@@ -45,7 +45,7 @@ func TestCursorUpdatePayload(t *testing.T) {
 	protocol.WriteInt(&buf, 3)
 
 	// One string value.
-	data, cubType, _ := EncodeBindValue("hello")
+	data, cubType, _ := encodeBindValue("hello")
 	protocol.WriteInt(&buf, 1)
 	protocol.WriteByte(&buf, byte(cubType))
 	protocol.WriteInt(&buf, int32(len(data)))

@@ -126,7 +126,7 @@ func TestDecodeValueMonetary(t *testing.T) {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, math.Float64bits(amount))
 
-	val, err := DecodeValue(protocol.CubridTypeMonetary, data)
+	val, err := decodeValue(protocol.CubridTypeMonetary, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestDecodeValueMonetary(t *testing.T) {
 }
 
 func TestDecodeValueMonetaryTooShort(t *testing.T) {
-	_, err := DecodeValue(protocol.CubridTypeMonetary, []byte{0, 0, 0, 0})
+	_, err := decodeValue(protocol.CubridTypeMonetary, []byte{0, 0, 0, 0})
 	if err == nil {
 		t.Fatal("expected error for short monetary data")
 	}
@@ -151,17 +151,21 @@ func TestDecodeValueMonetaryTooShort(t *testing.T) {
 
 func TestEncodeBindValueMonetary(t *testing.T) {
 	m := NewCubridMonetary(99.99, CurrencyEUR)
-	data, cubType, err := EncodeBindValue(m)
+	data, cubType, err := encodeBindValue(m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cubType != protocol.CubridTypeDouble {
-		t.Fatalf("type: got %d, want %d", cubType, protocol.CubridTypeDouble)
+	if cubType != protocol.CubridTypeMonetary {
+		t.Fatalf("type: got %d, want %d", cubType, protocol.CubridTypeMonetary)
 	}
-	if len(data) != 8 {
-		t.Fatalf("data len: got %d, want 8", len(data))
+	if len(data) != 12 {
+		t.Fatalf("data len: got %d, want 12", len(data))
 	}
-	decoded := math.Float64frombits(binary.BigEndian.Uint64(data))
+	currency := Currency(binary.BigEndian.Uint32(data[0:4]))
+	if currency != CurrencyEUR {
+		t.Fatalf("currency: got %d, want %d (EUR)", currency, CurrencyEUR)
+	}
+	decoded := math.Float64frombits(binary.BigEndian.Uint64(data[4:12]))
 	if math.Abs(decoded-99.99) > 1e-10 {
 		t.Fatalf("decoded amount: got %f, want 99.99", decoded)
 	}
@@ -169,21 +173,25 @@ func TestEncodeBindValueMonetary(t *testing.T) {
 
 func TestEncodeBindValueMonetaryByValue(t *testing.T) {
 	m := CubridMonetary{Amount: -42.5, Currency: CurrencyGBP}
-	data, cubType, err := EncodeBindValue(m)
+	data, cubType, err := encodeBindValue(m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cubType != protocol.CubridTypeDouble {
-		t.Fatalf("type: got %d, want %d", cubType, protocol.CubridTypeDouble)
+	if cubType != protocol.CubridTypeMonetary {
+		t.Fatalf("type: got %d, want %d", cubType, protocol.CubridTypeMonetary)
 	}
-	decoded := math.Float64frombits(binary.BigEndian.Uint64(data))
+	currency := Currency(binary.BigEndian.Uint32(data[0:4]))
+	if currency != CurrencyGBP {
+		t.Fatalf("currency: got %d, want %d (GBP)", currency, CurrencyGBP)
+	}
+	decoded := math.Float64frombits(binary.BigEndian.Uint64(data[4:12]))
 	if decoded != -42.5 {
 		t.Fatalf("decoded amount: got %f, want -42.5", decoded)
 	}
 }
 
 func TestScanTypeForMonetary(t *testing.T) {
-	got := ScanTypeForCubridType(protocol.CubridTypeMonetary)
+	got := scanTypeForCubridType(protocol.CubridTypeMonetary)
 	want := reflect.TypeOf(&CubridMonetary{})
 	if got != want {
 		t.Fatalf("ScanType: got %v, want %v", got, want)
@@ -219,7 +227,7 @@ func TestDecodeValueDoubleUnchanged(t *testing.T) {
 	// Verify DOUBLE still returns float64 (not *CubridMonetary).
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, math.Float64bits(3.14))
-	val, err := DecodeValue(protocol.CubridTypeDouble, data)
+	val, err := decodeValue(protocol.CubridTypeDouble, data)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -58,7 +58,7 @@ func TestCubridNumericScan(t *testing.T) {
 
 func TestDecodeValueNumeric(t *testing.T) {
 	data := []byte("99.99\x00")
-	val, err := DecodeValue(protocol.CubridTypeNumeric, data)
+	val, err := decodeValue(protocol.CubridTypeNumeric, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestDecodeValueNumeric(t *testing.T) {
 
 func TestEncodeBindValueNumeric(t *testing.T) {
 	n := NewCubridNumeric("3.14")
-	data, cubType, err := EncodeBindValue(n)
+	data, cubType, err := encodeBindValue(n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestEncodeBindValueNumeric(t *testing.T) {
 }
 
 func TestScanTypeForNumeric(t *testing.T) {
-	got := ScanTypeForCubridType(protocol.CubridTypeNumeric)
+	got := scanTypeForCubridType(protocol.CubridTypeNumeric)
 	want := reflect.TypeOf(&CubridNumeric{})
 	if got != want {
 		t.Fatalf("got %v, want %v", got, want)

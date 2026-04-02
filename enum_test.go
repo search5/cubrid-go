@@ -70,7 +70,7 @@ func TestCubridEnumScanError(t *testing.T) {
 
 func TestDecodeValueEnum(t *testing.T) {
 	data := []byte("Active\x00")
-	val, err := DecodeValue(protocol.CubridTypeEnum, data)
+	val, err := decodeValue(protocol.CubridTypeEnum, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestDecodeValueEnum(t *testing.T) {
 
 func TestEncodeBindValueEnum(t *testing.T) {
 	e := NewCubridEnum("Red", 1)
-	data, cubType, err := EncodeBindValue(e)
+	data, cubType, err := encodeBindValue(e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestEncodeBindValueEnum(t *testing.T) {
 
 func TestEncodeBindValueEnumByValue(t *testing.T) {
 	e := CubridEnum{Name: "Blue", Value: 2}
-	data, cubType, err := EncodeBindValue(e)
+	data, cubType, err := encodeBindValue(e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestEncodeBindValueEnumByValue(t *testing.T) {
 }
 
 func TestScanTypeForEnum(t *testing.T) {
-	got := ScanTypeForCubridType(protocol.CubridTypeEnum)
+	got := scanTypeForCubridType(protocol.CubridTypeEnum)
 	want := reflect.TypeOf(&CubridEnum{})
 	if got != want {
 		t.Fatalf("ScanType: got %v, want %v", got, want)

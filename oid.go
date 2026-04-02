@@ -3,6 +3,7 @@ package cubrid
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -45,7 +46,7 @@ func (o *CubridOid) Encode() []byte {
 }
 
 // DecodeCubridOid deserializes an OID from 8 bytes.
-func DecodeCubridOid(data []byte) (*CubridOid, error) {
+func decodeCubridOid(data []byte) (*CubridOid, error) {
 	if len(data) < 8 {
 		return nil, fmt.Errorf("cubrid: OID requires 8 bytes, got %d", len(data))
 	}
@@ -73,7 +74,7 @@ func (o *CubridOid) Scan(src interface{}) error {
 		o.VolID = v.VolID
 		return nil
 	case []byte:
-		decoded, err := DecodeCubridOid(v)
+		decoded, err := decodeCubridOid(v)
 		if err != nil {
 			return err
 		}
@@ -92,11 +93,28 @@ func (o *CubridOid) Scan(src interface{}) error {
 // OidGet reads attribute values from an object identified by OID.
 // The attrs parameter specifies which attributes to read (empty = all).
 // Returns a map of attribute name → value.
-func OidGet(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs []string) (map[string]interface{}, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+func OidGet(ctx context.Context, conn *sql.Conn, oid *CubridOid, attrs []string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := conn.Raw(func(driverConn interface{}) error {
+		c, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: OidGet requires a cubrid connection")
+		}
+		r, err := c.oidGet(ctx, oid, attrs)
+		if err != nil {
+			return err
+		}
+		result = r
+		return nil
+	})
+	return result, err
+}
 
-	if conn.closed {
+func (c *cubridConn) oidGet(ctx context.Context, oid *CubridOid, attrs []string) (map[string]interface{}, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return nil, driver.ErrBadConn
 	}
 
@@ -108,11 +126,11 @@ func OidGet(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs []strin
 	attrsStr := strings.Join(attrs, ",")
 	protocol.WriteNullTermString(&buf, attrsStr)
 
-	frame, err := conn.sendRequestCtx(ctx, protocol.FuncCodeOidGet, buf.Bytes())
+	frame, err := c.sendRequestCtx(ctx, protocol.FuncCodeOidGet, buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	if err := conn.checkError(frame); err != nil {
+	if err := c.checkError(frame); err != nil {
 		return nil, err
 	}
 
@@ -120,11 +138,21 @@ func OidGet(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs []strin
 }
 
 // OidPut updates attribute values on an object identified by OID.
-func OidPut(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs map[string]interface{}) error {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+func OidPut(ctx context.Context, conn *sql.Conn, oid *CubridOid, attrs map[string]interface{}) error {
+	return conn.Raw(func(driverConn interface{}) error {
+		c, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: OidPut requires a cubrid connection")
+		}
+		return c.oidPut(ctx, oid, attrs)
+	})
+}
 
-	if conn.closed {
+func (c *cubridConn) oidPut(ctx context.Context, oid *CubridOid, attrs map[string]interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return driver.ErrBadConn
 	}
 
@@ -141,7 +169,7 @@ func OidPut(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs map[str
 	}
 	// Attribute values (type + value pairs, same as bind params).
 	for _, val := range attrs {
-		data, cubType, err := EncodeBindValue(val)
+		data, cubType, err := encodeBindValue(val)
 		if err != nil {
 			return fmt.Errorf("cubrid: encode OID attr value: %w", err)
 		}
@@ -157,11 +185,11 @@ func OidPut(ctx context.Context, conn *cubridConn, oid *CubridOid, attrs map[str
 		}
 	}
 
-	frame, err := conn.sendRequestCtx(ctx, protocol.FuncCodeOidPut, buf.Bytes())
+	frame, err := c.sendRequestCtx(ctx, protocol.FuncCodeOidPut, buf.Bytes())
 	if err != nil {
 		return err
 	}
-	return conn.checkError(frame)
+	return c.checkError(frame)
 }
 
 func parseOidGetResponse(frame *protocol.ResponseFrame, attrs []string) (map[string]interface{}, error) {

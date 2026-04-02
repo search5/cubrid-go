@@ -41,7 +41,7 @@ func TestPrepareAndExecPayload(t *testing.T) {
 	protocol.WriteInt(&buf, 0) // query timeout
 
 	// One bind parameter (int 42).
-	data, cubType, _ := EncodeBindValue(int32(42))
+	data, cubType, _ := encodeBindValue(int32(42))
 	protocol.WriteInt(&buf, 1)
 	protocol.WriteByte(&buf, byte(cubType))
 	protocol.WriteInt(&buf, int32(len(data)))

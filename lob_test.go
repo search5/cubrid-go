@@ -17,7 +17,7 @@ func TestLobHandleDecode(t *testing.T) {
 	copy(buf[16:], locator)
 	buf[16+len(locator)] = 0x00
 
-	h, err := DecodeLobHandle(buf)
+	h, err := decodeLobHandle(buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestLobHandleDecodeClob(t *testing.T) {
 	copy(buf[16:], locator)
 	buf[16+len(locator)] = 0x00
 
-	h, err := DecodeLobHandle(buf)
+	h, err := decodeLobHandle(buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestLobHandleEncode(t *testing.T) {
 		t.Fatalf("encode len = %d, want 24", len(data))
 	}
 
-	h2, err := DecodeLobHandle(data)
+	h2, err := decodeLobHandle(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestLobHandleEncode(t *testing.T) {
 }
 
 func TestLobHandleDecodeTooShort(t *testing.T) {
-	_, err := DecodeLobHandle([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	_, err := decodeLobHandle([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 	if err == nil {
 		t.Error("expected error for short data")
 	}

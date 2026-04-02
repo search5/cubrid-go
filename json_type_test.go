@@ -67,7 +67,7 @@ func TestCubridJsonScan(t *testing.T) {
 
 func TestDecodeValueJson(t *testing.T) {
 	data := []byte(`{"key":"value"}` + "\x00")
-	val, err := DecodeValue(protocol.CubridTypeJSON, data)
+	val, err := decodeValue(protocol.CubridTypeJSON, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestDecodeValueJson(t *testing.T) {
 
 func TestEncodeBindValueJson(t *testing.T) {
 	j := NewCubridJson(`[1,2,3]`)
-	data, cubType, err := EncodeBindValue(j)
+	data, cubType, err := encodeBindValue(j)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestEncodeBindValueJson(t *testing.T) {
 }
 
 func TestScanTypeForJson(t *testing.T) {
-	got := ScanTypeForCubridType(protocol.CubridTypeJSON)
+	got := scanTypeForCubridType(protocol.CubridTypeJSON)
 	want := reflect.TypeOf(&CubridJson{})
 	if got != want {
 		t.Fatalf("got %v, want %v", got, want)

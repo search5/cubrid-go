@@ -56,9 +56,9 @@ func (e *CubridError) Is(target error) bool {
 	return e.Code == t.Code
 }
 
-// ParseErrorResponse parses the body of a CAS error response.
+// parseErrorResponse parses the body of a CAS error response.
 // Format: error_code(4) + error_message(null-terminated)
-func ParseErrorResponse(body []byte) error {
+func parseErrorResponse(body []byte) error {
 	if len(body) < 4 {
 		return &CubridError{Code: -1, Message: "malformed error response"}
 	}

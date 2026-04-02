@@ -172,6 +172,119 @@ func TestParseDSN(t *testing.T) {
 	}
 }
 
+func TestParseDSNMultiHost(t *testing.T) {
+	dsn, err := ParseDSN("cubrid://dba:@host1:33000,host2:33001/mydb?ha=true&lb=round_robin&rw_split=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dsn.Hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(dsn.Hosts))
+	}
+	if dsn.Hosts[0].Host != "host1" || dsn.Hosts[0].Port != 33000 {
+		t.Errorf("host[0] = %+v", dsn.Hosts[0])
+	}
+	if dsn.Hosts[1].Host != "host2" || dsn.Hosts[1].Port != 33001 {
+		t.Errorf("host[1] = %+v", dsn.Hosts[1])
+	}
+	if !dsn.HA {
+		t.Error("HA should be true")
+	}
+	if dsn.LoadBalance != LBRoundRobin {
+		t.Errorf("LoadBalance = %q, want round_robin", dsn.LoadBalance)
+	}
+	if !dsn.ReadWriteSplit {
+		t.Error("ReadWriteSplit should be true")
+	}
+	// First host should be primary.
+	if dsn.Host != "host1" || dsn.Port != 33000 {
+		t.Errorf("primary host = %s:%d", dsn.Host, dsn.Port)
+	}
+}
+
+func TestParseDSNMultiHostDefaultPort(t *testing.T) {
+	dsn, err := ParseDSN("cubrid://dba:@host1,host2/mydb?ha=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dsn.Hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(dsn.Hosts))
+	}
+	for i, hp := range dsn.Hosts {
+		if hp.Port != 33000 {
+			t.Errorf("host[%d] port = %d, want 33000", i, hp.Port)
+		}
+	}
+}
+
+func TestParseDSNInvalidLB(t *testing.T) {
+	_, err := ParseDSN("cubrid://dba:@localhost:33000/mydb?lb=invalid")
+	if err == nil {
+		t.Fatal("expected error for invalid lb mode")
+	}
+}
+
+func TestParseDSNInvalidHA(t *testing.T) {
+	_, err := ParseDSN("cubrid://dba:@localhost:33000/mydb?ha=notbool")
+	if err == nil {
+		t.Fatal("expected error for invalid ha value")
+	}
+}
+
+func TestParseDSNInvalidRWSplit(t *testing.T) {
+	_, err := ParseDSN("cubrid://dba:@localhost:33000/mydb?rw_split=notbool")
+	if err == nil {
+		t.Fatal("expected error for invalid rw_split value")
+	}
+}
+
+func TestDSNStringMultiHost(t *testing.T) {
+	dsn := DSN{
+		Host:           "host1",
+		Port:           33000,
+		Database:       "mydb",
+		User:           "dba",
+		AutoCommit:     true,
+		Charset:        "utf-8",
+		ConnectTimeout: 30 * time.Second,
+		IsolationLevel: IsolationReadCommitted,
+		Hosts: []HostPort{
+			{Host: "host1", Port: 33000},
+			{Host: "host2", Port: 33001},
+		},
+		HA:             true,
+		LoadBalance:    LBRoundRobin,
+		ReadWriteSplit: true,
+	}
+
+	s := dsn.String()
+	// Should contain both hosts.
+	if !contains(s, "host1:33000") || !contains(s, "host2:33001") {
+		t.Errorf("multi-host DSN string missing hosts: %s", s)
+	}
+	if !contains(s, "ha=true") {
+		t.Errorf("DSN string missing ha=true: %s", s)
+	}
+	if !contains(s, "lb=round_robin") {
+		t.Errorf("DSN string missing lb=round_robin: %s", s)
+	}
+	if !contains(s, "rw_split=true") {
+		t.Errorf("DSN string missing rw_split=true: %s", s)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
+}
+
+func containsSubstr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDSNString(t *testing.T) {
 	dsn := DSN{
 		Host:           "localhost",

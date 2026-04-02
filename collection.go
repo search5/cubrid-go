@@ -99,7 +99,7 @@ func (s *CubridSequence) Scan(src interface{}) error {
 //
 // Each element is decoded according to the element type using DecodeValue.
 // A zero-length element (size <= 0) is decoded as nil (NULL).
-func DecodeCollectionValue(collType, elemType protocol.CubridType, data []byte) (interface{}, error) {
+func decodeCollectionValue(collType, elemType protocol.CubridType, data []byte) (interface{}, error) {
 	elements, err := decodeCollectionElements(elemType, data)
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func decodeCollectionElements(elemType protocol.CubridType, data []byte) ([]inte
 			return elements, fmt.Errorf("cubrid: read collection element data: %w", err)
 		}
 
-		val, err := DecodeValue(actualType, elemData)
+		val, err := decodeValue(actualType, elemData)
 		if err != nil {
 			return elements, fmt.Errorf("cubrid: decode collection element: %w", err)
 		}

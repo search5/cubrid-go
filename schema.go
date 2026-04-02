@@ -42,18 +42,9 @@ type SchemaInfoResult struct {
 	Columns  []ColumnMeta // Schema result column metadata.
 }
 
-// SchemaInfo queries CUBRID system catalog metadata.
-//
-// The response is a result set that must be fetched row by row, similar to
-// a SELECT query. Use the returned SchemaInfoResult.Handle with fetchMore
-// or iterate via SchemaRows.
-//
-// Examples:
-//
-//	SchemaInfo(ctx, conn, SchemaClass, "", "", SchemaFlagExact)        // All tables
-//	SchemaInfo(ctx, conn, SchemaAttribute, "my_table", "", SchemaFlagExact) // Columns of my_table
-//	SchemaInfo(ctx, conn, SchemaPrimaryKey, "my_table", "", SchemaFlagExact) // PK of my_table
-func SchemaInfo(ctx context.Context, conn *cubridConn, schemaType SchemaType, tableName, columnName string, flag SchemaPatternFlag) (*SchemaRows, error) {
+// schemaInfo queries CUBRID system catalog metadata via the CCI SCHEMA_INFO protocol.
+// Use SchemaInfoDB for the public API that works with *sql.DB.
+func schemaInfo(ctx context.Context, conn *cubridConn, schemaType SchemaType, tableName, columnName string, flag SchemaPatternFlag) (*SchemaRows, error) {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
@@ -533,3 +524,57 @@ func GetInheritanceInfo(ctx context.Context, db interface {
 
 // SchemaTypeSuperClass is the SCHEMA_INFO type for querying super class relationships.
 const SchemaTypeSuperClass SchemaType = 3
+
+// SchemaInfoDB queries CUBRID system catalog metadata via *sql.DB.
+//
+// This is the public API wrapper around schemaInfo that works with
+// database/sql connections. It uses sql.Conn.Raw() internally to
+// access the underlying CUBRID driver connection and call the CCI
+// protocol CAS_FC_SCHEMA_INFO function.
+//
+// Examples:
+//
+//	rows, err := cubrid.SchemaInfoDB(ctx, db, cubrid.SchemaClass, "", "", cubrid.SchemaFlagExact)
+//	for {
+//	    row, err := rows.Next()
+//	    if err == io.EOF { break }
+//	    fmt.Println(row)
+//	}
+//	rows.Close()
+func SchemaInfoDB(ctx context.Context, db *sql.DB, schemaType SchemaType, tableName, columnName string, flag SchemaPatternFlag) (*SchemaRows, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cubrid: get connection: %w", err)
+	}
+	// SchemaInfo eagerly fetches all rows into the buffer, so the
+	// sql.Conn can be returned to the pool immediately after.
+	defer conn.Close()
+
+	var result *SchemaRows
+	err = conn.Raw(func(driverConn interface{}) error {
+		cc, ok := driverConn.(*cubridConn)
+		if !ok {
+			return fmt.Errorf("cubrid: expected *cubridConn, got %T", driverConn)
+		}
+		var innerErr error
+		result, innerErr = schemaInfo(ctx, cc, schemaType, tableName, columnName, flag)
+		return innerErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// ColumnsMeta returns the column metadata for the schema result.
+func (r *SchemaRows) ColumnsMeta() []ColumnMeta {
+	return r.columns
+}
+
+// AllRows returns all buffered rows at once. Since schemaInfo eagerly
+// fetches all rows, this returns the complete result set without
+// additional network calls.
+func (r *SchemaRows) AllRows() [][]interface{} {
+	return r.buffer
+}

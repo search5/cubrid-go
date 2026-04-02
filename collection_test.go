@@ -74,7 +74,7 @@ func TestDecodeCollectionValue(t *testing.T) {
 		0x00, 0x00, 0x00, 0x02, 'c', 0x00, // element "c" (size=2)
 	}
 
-	result, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, data)
+	result, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestDecodeCollectionValueInt(t *testing.T) {
 		0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x14, // 20
 	}
 
-	result, err := DecodeCollectionValue(protocol.CubridTypeSequence, protocol.CubridTypeInt, data)
+	result, err := decodeCollectionValue(protocol.CubridTypeSequence, protocol.CubridTypeInt, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestDecodeCollectionValueInt(t *testing.T) {
 }
 
 func TestDecodeCollectionEmpty(t *testing.T) {
-	result, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, nil)
+	result, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestDecodeCollectionWithNull(t *testing.T) {
 		0x00, 0x00, 0x00, 0x02, 'y', 0x00, // "y"
 	}
 
-	result, err := DecodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, data)
+	result, err := decodeCollectionValue(protocol.CubridTypeSet, protocol.CubridTypeString, data)
 	if err != nil {
 		t.Fatal(err)
 	}

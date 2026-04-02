@@ -33,7 +33,7 @@ func TestEncodeBindValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, cubType, err := EncodeBindValue(tt.value)
+			data, cubType, err := encodeBindValue(tt.value)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -52,7 +52,7 @@ func TestEncodeBindValue(t *testing.T) {
 }
 
 func TestEncodeBindValueUnsupported(t *testing.T) {
-	_, _, err := EncodeBindValue(struct{}{})
+	_, _, err := encodeBindValue(struct{}{})
 	if err == nil {
 		t.Error("expected error for unsupported type")
 	}
@@ -151,7 +151,7 @@ func TestDecodeValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeValue(tt.cubType, tt.data)
+			got, err := decodeValue(tt.cubType, tt.data)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -163,7 +163,7 @@ func TestDecodeValue(t *testing.T) {
 }
 
 func TestDecodeValueNull(t *testing.T) {
-	got, err := DecodeValue(protocol.CubridTypeNull, nil)
+	got, err := decodeValue(protocol.CubridTypeNull, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestScanTypeForCubridType(t *testing.T) {
 		{protocol.CubridTypeJSON, reflect.TypeOf(&CubridJson{})},
 	}
 	for _, tt := range tests {
-		got := ScanTypeForCubridType(tt.cubType)
+		got := scanTypeForCubridType(tt.cubType)
 		if got != tt.want {
 			t.Errorf("ScanType(%v) = %v, want %v", tt.cubType, got, tt.want)
 		}
@@ -210,11 +210,11 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, cubType, err := EncodeBindValue(tt.value)
+			data, cubType, err := encodeBindValue(tt.value)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := DecodeValue(cubType, data)
+			got, err := decodeValue(cubType, data)
 			if err != nil {
 				t.Fatal(err)
 			}
