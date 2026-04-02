@@ -19,6 +19,9 @@ import (
 	"database/sql/driver"
 )
 
+// Version is the semantic version of the cubrid-go driver.
+const Version = "0.1.0"
+
 func init() {
 	sql.Register("cubrid", &CubridDriver{})
 }
